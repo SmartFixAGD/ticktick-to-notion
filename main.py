@@ -1,7 +1,7 @@
-import json
+import os
 import requests
 
-# === Funkcja pomocnicza do wycinania tekstu między znacznikami ===
+# === Funkcja pomocnicza ===
 def extract(text, start, end):
     try:
         if end:
@@ -11,15 +11,12 @@ def extract(text, start, end):
     except IndexError:
         return ""
 
-# === 1. Wczytaj konfigurację z config.json ===
-with open("config.json") as f:
-    config = json.load(f)
-
-TICKTICK_SESSION = config["ticktick_session"]
-TICKTICK_DEVICE = config["ticktick_device"]
-NOTION_TOKEN = config["notion_token"]
-NOTION_DB = config["notion_database_id"]
-PROJECT_ID = config["ticktick_project_id"]
+# === 1. Wczytaj dane z ENV ===
+TICKTICK_SESSION = os.environ["TICKTICK_SESSION"]
+TICKTICK_DEVICE = os.environ["TICKTICK_DEVICE"]
+NOTION_TOKEN = os.environ["NOTION_TOKEN"]
+NOTION_DB = os.environ["NOTION_DATABASE_ID"]
+PROJECT_ID = os.environ["TICKTICK_PROJECT_ID"]
 
 # === 2. Pobierz zadania z TickTick ===
 headers = {
@@ -35,17 +32,17 @@ if res.status_code != 200:
 
 tasks = res.json()
 
-# === 3. Filtrowanie i przetwarzanie zadań ===
+# === 3. Przetwarzanie zadań ===
 for task in tasks:
     tags = task.get("tags", [])
     if not any(tag in ["завершено", "анульовано"] for tag in tags):
-        continue  # pomijamy jeśli nie pasuje tag
+        continue
 
     desc = task.get("description", "")
     title = task.get("title", "Без назви")
     due = task.get("dueDate", None)
 
-    # Parsowanie danych z pola description
+    # Parsowanie opisu
     problem = extract(desc, "**Опис проблеми чи поломки:**", "**Контактна інформація:**")
     kontakt = extract(desc, "**Контакт:**", "- **Адреса:**")
     adres = extract(desc, "**Адреса:**", "**Фінанси:**")
@@ -53,8 +50,8 @@ for task in tasks:
     przychod = extract(desc, "**Прихід:**", "*Дата замовлення:*")
     data_zam = extract(desc, "*Дата замовлення:*", "")
 
-    # === 4. Tworzenie wpisu w Notion ===
-    notion_payload = {
+    # === 4. Wyślij do Notion ===
+    payload = {
         "parent": { "database_id": NOTION_DB },
         "properties": {
             "Тип, виробник і модель": {"title": [{"text": {"content": title}}]},
@@ -76,9 +73,9 @@ for task in tasks:
         "Notion-Version": "2022-06-28"
     }
 
-    notion_res = requests.post("https://api.notion.com/v1/pages", headers=notion_headers, json=notion_payload)
+    response = requests.post("https://api.notion.com/v1/pages", headers=notion_headers, json=payload)
 
-    if notion_res.status_code != 200:
-        print(f"❌ Błąd Notion ({notion_res.status_code}): {notion_res.text}")
+    if response.status_code != 200:
+        print(f"❌ Błąd Notion: {response.status_code} {response.text}")
     else:
-        print(f"✅ Dodano do Notion: {title}")
+        print(f"✅ Dodano: {title}")
